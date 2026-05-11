@@ -461,12 +461,16 @@ def main():
 
     # ── 7. Export predictions ────────────────────────────────────────
     print(f"\n[7/7] Exporting predictions to {OUTPUT_CSV} …")
-    np.savetxt(OUTPUT_CSV, y_test_pred, fmt="%.6f")
+    # Save with ',' as decimal separator for Excel compatibility (Turkish locale)
+    # Manual writing ensures no extra quotes are added
+    with open(OUTPUT_CSV, 'w') as f:
+        for val in y_test_pred:
+            f.write(f"{val:.6f}".replace('.', ',') + '\n')
 
     # Verify the CSV
-    check = np.loadtxt(OUTPUT_CSV)
+    check = pd.read_csv(OUTPUT_CSV, header=None, decimal=',', sep='|').values.flatten()
     assert check.shape == (20,), f"CSV shape mismatch: {check.shape}"
-    print(f"  ✓ {OUTPUT_CSV} written — {len(check)} rows, no header, no index")
+    print(f"  ✓ {OUTPUT_CSV} written — {len(check)} rows, no header, no index, decimal=','")
 
     # ── Summary ──────────────────────────────────────────────────────
     print("\n" + "=" * 65)
