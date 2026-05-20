@@ -1,20 +1,3 @@
-"""
-CE 475 — Machine Learning Regression Project
-=============================================
-Trains 8 regression models on 100 labelled samples (X1–X6 → Y),
-compares them via 5-fold cross-validation, selects the best model,
-and predicts Y for 20 unlabelled test points (IDs 101–120).
-
-Outputs
--------
-- predictions.csv  : 20 predicted Y values (no header, no index)
-- Console          : model comparison table & best-model summary
-- Plots            : saved as PNG files for the term-paper report
-
-Author  : Demircucu
-Date    : 2026-05-11
-"""
-
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -35,16 +18,14 @@ from sklearn.metrics import (
     r2_score,
 )
 
-# ── Models ───────────────────────────────────────────────────────────────
+# Models 
 from sklearn.linear_model import Ridge, Lasso, ElasticNet
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 
-# ══════════════════════════════════════════════════════════════════════════
-#  CONFIGURATION
-# ══════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
 DATA_FILE = "data.xlsx"
 SHEET_NAME = "Data"
 OUTPUT_CSV = "predictions.csv"
@@ -55,18 +36,11 @@ CV_FOLDS = 5
 np.random.seed(RANDOM_STATE)
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  DATA LOADING
-# ══════════════════════════════════════════════════════════════════════════
+# DATA LOADING
 def load_data_from_excel(file_path: str):
-    """
-    Read training (rows 2-101) and test (rows 102-121) data from the
-    Excel file using openpyxl.  Returns raw numpy arrays.
-    """
     workbook = openpyxl.load_workbook(file_path, data_only=True)
     sheet = workbook[SHEET_NAME]
 
-    # Training data: rows 2–101, columns B–G (X1..X6), column H (Y)
     X_train = np.array(
         [[cell.value for cell in row] for row in sheet.iter_rows(
             min_row=2, max_row=101, min_col=2, max_col=7
@@ -78,7 +52,6 @@ def load_data_from_excel(file_path: str):
         dtype=np.float64,
     )
 
-    # Test data: rows 102–121, columns B–G (X1..X6)
     X_test = np.array(
         [[cell.value for cell in row] for row in sheet.iter_rows(
             min_row=102, max_row=121, min_col=2, max_col=7
@@ -90,16 +63,9 @@ def load_data_from_excel(file_path: str):
     return X_train, y_train, X_test
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  PREPROCESSING
-# ══════════════════════════════════════════════════════════════════════════
+# PREPROCESSING
 def preprocess(X_train_raw, X_test_raw):
-    """
-    1. StandardScaler (fit on train, transform both)
-    2. PolynomialFeatures degree-2 (captures interactions)
 
-    Returns scaled/engineered arrays AND the fitted transformers.
-    """
     scaler = StandardScaler()
     X_train_sc = scaler.fit_transform(X_train_raw)
     X_test_sc = scaler.transform(X_test_raw)
@@ -111,11 +77,8 @@ def preprocess(X_train_raw, X_test_raw):
     return X_train_sc, X_test_sc, X_train_poly, X_test_poly, scaler, poly
 
 
-# ══════════════════════════════════════════════════════════════════════════
 #  MODEL DEFINITIONS
-# ══════════════════════════════════════════════════════════════════════════
 def get_models():
-    """Return an ordered dict of (name → model) pairs."""
     return {
         "Ridge Regression": Ridge(alpha=1.0),
         "Lasso Regression": Lasso(alpha=1.0, max_iter=10000),
@@ -136,14 +99,9 @@ def get_models():
     }
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  EVALUATION  (5-Fold Cross-Validation)
-# ══════════════════════════════════════════════════════════════════════════
+# EVALUATION  (5-Fold Cross-Validation)
 def evaluate_models_cv(models: dict, X, y, cv_folds=CV_FOLDS):
-    """
-    Run k-fold CV for each model. Returns a DataFrame with MAE, RMSE, R².
-    Uses polynomial features for linear models, plain scaled for others.
-    """
+
     kf = KFold(n_splits=cv_folds, shuffle=True, random_state=RANDOM_STATE)
 
     records = []
@@ -157,7 +115,7 @@ def evaluate_models_cv(models: dict, X, y, cv_folds=CV_FOLDS):
             model, X, y, cv=kf, scoring="neg_mean_squared_error"
         )
         rmse_scores = np.sqrt(mse_scores)
-        # R²
+        # R2
         r2_scores = cross_val_score(
             model, X, y, cv=kf, scoring="r2"
         )
@@ -177,14 +135,8 @@ def evaluate_models_cv(models: dict, X, y, cv_folds=CV_FOLDS):
     return df
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  HOLDOUT EVALUATION (for diagnostics / visualisation)
-# ══════════════════════════════════════════════════════════════════════════
+# HOLDOUT EVALUATION (for diagnostics / visualisation)
 def holdout_evaluate(models: dict, X, y, test_fraction=0.2):
-    """
-    80/20 sequential split for generating visual diagnostics.
-    Returns dict of {name: (model_fitted, y_true, y_pred)}.
-    """
     split = int(len(X) * (1 - test_fraction))
     X_tr, X_te = X[:split], X[split:]
     y_tr, y_te = y[:split], y[split:]
@@ -197,15 +149,12 @@ def holdout_evaluate(models: dict, X, y, test_fraction=0.2):
     return results
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  PLOTTING UTILITIES
-# ══════════════════════════════════════════════════════════════════════════
+# PLOTTING UTILITIES
 def ensure_plot_dir():
     os.makedirs(PLOT_DIR, exist_ok=True)
 
 
 def plot_model_comparison(cv_results: pd.DataFrame):
-    """Bar chart comparing all models by MAE."""
     ensure_plot_dir()
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -219,7 +168,6 @@ def plot_model_comparison(cv_results: pd.DataFrame):
     ax.set_title("Model Comparison — Cross-Validated MAE", fontsize=14, fontweight="bold")
     ax.invert_yaxis()
 
-    # Annotate bars
     for bar, val in zip(bars, cv_results["MAE (mean)"]):
         ax.text(bar.get_width() + 10, bar.get_y() + bar.get_height() / 2,
                 f"{val:.1f}", va="center", fontsize=9)
@@ -231,7 +179,6 @@ def plot_model_comparison(cv_results: pd.DataFrame):
 
 
 def plot_actual_vs_predicted(y_true, y_pred, model_name):
-    """Scatter of actual vs predicted with ideal line."""
     ensure_plot_dir()
     fig, ax = plt.subplots(figsize=(7, 7))
     ax.scatter(y_true, y_pred, alpha=0.7, edgecolors="black", s=60, color="#4C72B0")
@@ -250,7 +197,6 @@ def plot_actual_vs_predicted(y_true, y_pred, model_name):
 
 
 def plot_residuals(y_true, y_pred, model_name):
-    """Residual histogram."""
     ensure_plot_dir()
     residuals = y_pred - y_true
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -267,7 +213,6 @@ def plot_residuals(y_true, y_pred, model_name):
 
 
 def plot_feature_importance(model, feature_names, model_name):
-    """Feature importance bar chart for tree-based models."""
     ensure_plot_dir()
     if not hasattr(model, "feature_importances_"):
         return
@@ -327,15 +272,13 @@ def plot_y_distribution(y):
     print(f"  ✓ Saved {PLOT_DIR}/y_distribution.png")
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  MAIN PIPELINE
-# ══════════════════════════════════════════════════════════════════════════
+# MAIN PIPELINE
 def main():
     print("=" * 65)
     print("  CE 475 — Machine Learning Regression Project")
     print("=" * 65)
 
-    # ── 1. Load data ─────────────────────────────────────────────────
+    # 1. Load data 
     print("\n[1/7] Loading data from Excel …")
     X_train_raw, y_train, X_test_raw = load_data_from_excel(DATA_FILE)
     print(f"  Training samples : {X_train_raw.shape[0]}")
@@ -346,7 +289,7 @@ def main():
 
     feature_names = [f"X{i}" for i in range(1, 7)]
 
-    # ── 2. Preprocess ────────────────────────────────────────────────
+    # 2. Preprocess
     print("\n[2/7] Preprocessing (StandardScaler + Polynomial Features) …")
     X_tr_sc, X_te_sc, X_tr_poly, X_te_poly, scaler, poly = preprocess(
         X_train_raw, X_test_raw
@@ -355,15 +298,14 @@ def main():
     print(f"  Scaled features  : {X_tr_sc.shape[1]}")
     print(f"  Poly features    : {X_tr_poly.shape[1]} (degree-2)")
 
-    # ── 3. Exploratory plots ─────────────────────────────────────────
+    # 3. Exploratory plots
     print("\n[3/7] Generating exploratory plots …")
     plot_correlation_heatmap(X_train_raw, y_train, feature_names)
     plot_y_distribution(y_train)
 
-    # ── 4. Cross-validation ──────────────────────────────────────────
+    # 4. Cross-validation
     print("\n[4/7] Running 5-fold cross-validation …")
 
-    # Use polynomial features for linear models, scaled for others
     models_linear = {
         "Ridge Regression": Ridge(alpha=1.0),
         "Lasso Regression": Lasso(alpha=1.0, max_iter=10000),
@@ -395,11 +337,11 @@ def main():
     print("  └──────────────────────────────────────────────────────────────────────────┘")
     print(cv_results.to_string(index=False))
 
-    # ── 5. Visualise comparison ──────────────────────────────────────
+    # 5. Visualise comparison
     print("\n[5/7] Generating model comparison plot …")
     plot_model_comparison(cv_results)
 
-    # ── 6. Select best model, retrain on ALL data, predict test ──────
+    # 6. Select best model, retrain on ALL data, predict test
     print("\n[6/7] Selecting best model & predicting test set …")
     best_name = cv_results.iloc[0]["Model"]
     best_mae = cv_results.iloc[0]["MAE (mean)"]
@@ -409,11 +351,9 @@ def main():
     print(f"     CV MAE  = {best_mae:.2f}")
     print(f"     CV R²   = {best_r2:.4f}")
 
-    # Determine if best model is linear (needs poly features) or not
     is_linear = best_name in models_linear
     all_models = {**models_linear, **models_nonlinear}
 
-    # Fresh instance for final training
     best_model = all_models[best_name].__class__(
         **all_models[best_name].get_params()
     )
@@ -429,7 +369,7 @@ def main():
     for i, val in enumerate(y_test_pred):
         print(f"    ID {101 + i:3d} → {val:10.2f}")
 
-    # ── Holdout diagnostics for the best model ───────────────────────
+    # Holdout diagnostics for the best model
     holdout_models = {best_name: all_models[best_name].__class__(
         **all_models[best_name].get_params()
     )}
@@ -444,7 +384,6 @@ def main():
         if not is_linear:
             plot_feature_importance(fitted_model, feature_names, name)
         else:
-            # For poly models, show importance on poly feature names
             if hasattr(fitted_model, "feature_importances_"):
                 plot_feature_importance(
                     fitted_model,
@@ -452,17 +391,15 @@ def main():
                     name,
                 )
 
-    # Also generate feature importance for top tree-based models
+    # Also generate feature importance for top tree based models
     for name in ["Random Forest", "Gradient Boosting", "XGBoost"]:
         if name != best_name:
             m = all_models[name].__class__(**all_models[name].get_params())
             m.fit(X_tr_sc, y_train)
             plot_feature_importance(m, feature_names, name)
 
-    # ── 7. Export predictions ────────────────────────────────────────
+    # 7. Export predictions
     print(f"\n[7/7] Exporting predictions to {OUTPUT_CSV} …")
-    # Save with ',' as decimal separator for Excel compatibility (Turkish locale)
-    # Manual writing ensures no extra quotes are added
     with open(OUTPUT_CSV, 'w') as f:
         for val in y_test_pred:
             f.write(f"{val:.6f}".replace('.', ',') + '\n')
@@ -472,7 +409,7 @@ def main():
     assert check.shape == (20,), f"CSV shape mismatch: {check.shape}"
     print(f"  ✓ {OUTPUT_CSV} written — {len(check)} rows, no header, no index, decimal=','")
 
-    # ── Summary ──────────────────────────────────────────────────────
+    # Summary
     print("\n" + "=" * 65)
     print("  DONE — All outputs generated successfully")
     print("=" * 65)
