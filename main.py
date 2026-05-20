@@ -17,6 +17,8 @@ from sklearn.metrics import (
     mean_squared_error,
     r2_score,
 )
+from sklearn.preprocessing import RobustScaler
+import sklearn.base
 
 # Models 
 from sklearn.linear_model import Ridge, Lasso, ElasticNet
@@ -24,6 +26,8 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
+from sklearn.compose import TransformedTargetRegressor
+from sklearn.linear_model import HuberRegressor
 
 # CONFIGURATION
 DATA_FILE = "data.xlsx"
@@ -66,7 +70,7 @@ def load_data_from_excel(file_path: str):
 # PREPROCESSING
 def preprocess(X_train_raw, X_test_raw):
 
-    scaler = StandardScaler()
+    scaler = RobustScaler()
     X_train_sc = scaler.fit_transform(X_train_raw)
     X_test_sc = scaler.transform(X_test_raw)
 
@@ -79,46 +83,49 @@ def preprocess(X_train_raw, X_test_raw):
 
 #  MODEL DEFINITIONS
 def get_models():
-    return {
+    base_models = {
         "Ridge Regression": Ridge(alpha=1.0),
         "Lasso Regression": Lasso(alpha=1.0, max_iter=10000),
         "ElasticNet": ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=10000),
+        "Huber Regression": HuberRegressor(max_iter=2000),
         "K-Nearest Neighbors": KNeighborsRegressor(n_neighbors=5),
         "SVR (RBF Kernel)": SVR(kernel="rbf", C=100, epsilon=0.1),
-        "Random Forest": RandomForestRegressor(
-            n_estimators=200, max_depth=10, random_state=RANDOM_STATE
-        ),
-        "Gradient Boosting": GradientBoostingRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.1,
-            random_state=RANDOM_STATE,
-        ),
-        "XGBoost": XGBRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.1,
-            random_state=RANDOM_STATE, verbosity=0,
-        ),
+        "Random Forest": RandomForestRegressor(n_estimators=200, max_depth=10, random_state=RANDOM_STATE),
+        "Gradient Boosting": GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.1, random_state=RANDOM_STATE),
+        "XGBoost": XGBRegressor(n_estimators=200, max_depth=4, learning_rate=0.1, random_state=RANDOM_STATE, verbosity=0),
+    }
+    
+    def symlog(x):
+        return np.sign(x) * np.log1p(np.abs(x))
+
+    def symexp(x):
+        return np.sign(x) * np.expm1(np.abs(x))
+
+    return {
+        name: TransformedTargetRegressor(
+            regressor=m, 
+            func=symlog, 
+            inverse_func=symexp,
+            check_inverse=True  # scikit-learn'ün doğrulamadan geçmesini sağlar
+        ) 
+        for name, m in base_models.items()
     }
 
 
-# EVALUATION  (5-Fold Cross-Validation)
-def evaluate_models_cv(models: dict, X, y, cv_folds=CV_FOLDS):
+# EVALUATION (5-Fold Cross-Validation)
+def evaluate_models_cv(models: dict, X, y, is_linear_dict, X_poly, cv_folds=CV_FOLDS):
 
     kf = KFold(n_splits=cv_folds, shuffle=True, random_state=RANDOM_STATE)
 
     records = []
     for name, model in models.items():
+        X_data = X_poly if is_linear_dict[name] else X
+
         # MAE
-        mae_scores = -cross_val_score(
-            model, X, y, cv=kf, scoring="neg_mean_absolute_error"
-        )
-        # RMSE
-        mse_scores = -cross_val_score(
-            model, X, y, cv=kf, scoring="neg_mean_squared_error"
-        )
+        mae_scores = -cross_val_score(model, X_data, y, cv=kf, scoring="neg_mean_absolute_error")
+        mse_scores = -cross_val_score(model, X_data, y, cv=kf, scoring="neg_mean_squared_error")
         rmse_scores = np.sqrt(mse_scores)
-        # R2
-        r2_scores = cross_val_score(
-            model, X, y, cv=kf, scoring="r2"
-        )
+        r2_scores = cross_val_score(model, X_data, y, cv=kf, scoring="r2")
 
         records.append({
             "Model": name,
@@ -306,6 +313,8 @@ def main():
     # 4. Cross-validation
     print("\n[4/7] Running 5-fold cross-validation …")
 
+    models = get_models()
+    
     models_linear = {
         "Ridge Regression": Ridge(alpha=1.0),
         "Lasso Regression": Lasso(alpha=1.0, max_iter=10000),
@@ -326,9 +335,13 @@ def main():
             random_state=RANDOM_STATE, verbosity=0,
         ),
     }
+    is_linear_dict = {
+        "Ridge Regression": True, "Lasso Regression": True, "ElasticNet": True, "Huber Regression": True,
+        "K-Nearest Neighbors": False, "SVR (RBF Kernel)": False, "Random Forest": False, "Gradient Boosting": False, "XGBoost": False
+    }
 
-    cv_linear = evaluate_models_cv(models_linear, X_tr_poly, y_train)
-    cv_nonlinear = evaluate_models_cv(models_nonlinear, X_tr_sc, y_train)
+    cv_linear = evaluate_models_cv({k: v for k, v in models.items() if is_linear_dict[k]}, X_tr_sc, y_train, is_linear_dict, X_tr_poly)
+    cv_nonlinear = evaluate_models_cv({k: v for k, v in models.items() if not is_linear_dict[k]}, X_tr_sc, y_train, is_linear_dict, X_tr_poly)
     cv_results = pd.concat([cv_linear, cv_nonlinear], ignore_index=True)
     cv_results = cv_results.sort_values("MAE (mean)").reset_index(drop=True)
 
@@ -352,27 +365,24 @@ def main():
     print(f"     CV R²   = {best_r2:.4f}")
 
     is_linear = best_name in models_linear
-    all_models = {**models_linear, **models_nonlinear}
+    all_models = models
 
-    best_model = all_models[best_name].__class__(
-        **all_models[best_name].get_params()
-    )
+    best_model = sklearn.base.clone(all_models[best_name])
 
-    if is_linear:
-        best_model.fit(X_tr_poly, y_train)
-        y_test_pred = best_model.predict(X_te_poly)
-    else:
-        best_model.fit(X_tr_sc, y_train)
-        y_test_pred = best_model.predict(X_te_sc)
+    X_train_final = X_tr_poly if is_linear_dict[best_name] else X_tr_sc
+    X_test_final = X_te_poly if is_linear_dict[best_name] else X_te_sc
+
+
+    best_model.fit(X_train_final, y_train)
+    y_test_pred = best_model.predict(X_test_final)
 
     print(f"\n  Predicted Y values for test IDs 101–120:")
     for i, val in enumerate(y_test_pred):
         print(f"    ID {101 + i:3d} → {val:10.2f}")
 
     # Holdout diagnostics for the best model
-    holdout_models = {best_name: all_models[best_name].__class__(
-        **all_models[best_name].get_params()
-    )}
+    holdout_models = {best_name: sklearn.base.clone(all_models[best_name])}
+
     if is_linear:
         holdout_res = holdout_evaluate(holdout_models, X_tr_poly, y_train)
     else:
@@ -394,7 +404,7 @@ def main():
     # Also generate feature importance for top tree based models
     for name in ["Random Forest", "Gradient Boosting", "XGBoost"]:
         if name != best_name:
-            m = all_models[name].__class__(**all_models[name].get_params())
+            m = sklearn.base.clone(all_models[name])
             m.fit(X_tr_sc, y_train)
             plot_feature_importance(m, feature_names, name)
 
