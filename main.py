@@ -422,11 +422,11 @@ def main():
     print("  └──────────────────────────────────────────────────────────────────────────┘")
     print(cv_results.to_string(index=False))
 
-    # ── 5. Model comparison plot ───────────────────────────────────
+    # 5. Model comparison plot
     print("\n[5/8] Generating model comparison plot …")
     plot_model_comparison(cv_results)
 
-    # ── 6. Select best model, retrain, predict ─────────────────────
+    # 6. Select best model, retrain, predict
     print("\n[6/8] Selecting best model & predicting test set …")
     best_name = cv_results.iloc[0]["Model"]
     best_mae  = cv_results.iloc[0]["MAE (mean)"]
@@ -448,7 +448,7 @@ def main():
     for i, val in enumerate(y_test_pred):
         print(f"    ID {101 + i:3d} → {val:10.2f}")
 
-    # ── 7. Diagnostics & additional plots ─────────────────────────
+    # 7. Diagnostics & additional plots
     print("\n[7/8] Generating diagnostic plots …")
 
     holdout_models = {best_name: sklearn.base.clone(models[best_name])}
@@ -476,7 +476,7 @@ def main():
         best_name,
     )
 
-    # ── 8. Export predictions ──────────────────────────────────────
+    # 8. Export predictions
     print(f"\n[8/8] Exporting predictions to {OUTPUT_CSV} …")
     with open(OUTPUT_CSV, "w") as f:
         for val in y_test_pred:
@@ -487,7 +487,7 @@ def main():
     assert check.shape == (20,), f"CSV shape mismatch: {check.shape}"
     print(f"  ✓ {OUTPUT_CSV} written — {len(check)} rows, no header, no index")
 
-    # ── Summary ────────────────────────────────────────────────────
+    # Summary
     print("\n" + "=" * 65)
     print("  DONE — All outputs generated successfully")
     print("=" * 65)
