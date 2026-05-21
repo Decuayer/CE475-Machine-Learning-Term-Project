@@ -477,15 +477,23 @@ def main():
     )
 
     # 8. Export predictions
+    # Use comma as decimal separator so Turkish-locale Excel reads values correctly.
+    # Submission Guidelines explicitly allow both '.' and ',' as decimal separator.
     print(f"\n[8/8] Exporting predictions to {OUTPUT_CSV} …")
     with open(OUTPUT_CSV, "w") as f:
         for val in y_test_pred:
-            f.write(f"{val:.6f}\n")      # plain decimal, one value per line
+            f.write(f"{val:.6f}".replace(".", ",") + "\n")
 
-    # Verify
-    check = pd.read_csv(OUTPUT_CSV, header=None).values.flatten()
-    assert check.shape == (20,), f"CSV shape mismatch: {check.shape}"
-    print(f"  ✓ {OUTPUT_CSV} written — {len(check)} rows, no header, no index")
+    # Verify — read back with decimal=',' to parse the comma-decimal format
+    check = pd.read_csv(OUTPUT_CSV, header=None, decimal=",", sep=";").values.flatten()
+    # sep=";" prevents pandas from splitting on commas inside the decimal values
+    if check.shape != (20,):
+        # Fallback: try reading as plain strings and count rows
+        with open(OUTPUT_CSV) as f:
+            rows = [l.strip() for l in f if l.strip()]
+        assert len(rows) == 20, f"CSV row count mismatch: {len(rows)}"
+        check = rows  # just for the count
+    print(f"  ✓ {OUTPUT_CSV} written — 20 rows, decimal=',', no header, no index")
 
     # Summary
     print("\n" + "=" * 65)
